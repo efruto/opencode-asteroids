@@ -38,8 +38,13 @@ Luego visita `http://localhost:3000`.
 | Mediano   | 50     |
 | Pequeño   | 100    |
 
+## Power-ups
+
+Cada asteroide destruido tiene un 12% de probabilidad de soltar un ícono de velocidad. Al tocarlo, la nave se mueve el doble de rápido (empuje e inercia) durante 5 segundos; recoger otro renueva el contador. El ícono desaparece solo a los 15 segundos de aparecer.
+
 ## Características
 
 - 3 vidas con invencibilidad temporal al reaparecer (parpadeo)
 - Asteroides se parten en fragmentos más pequeños al ser destruidos
 - Partículas de explosión al destruir asteroides
+- Power-up de velocidad x2 con contador en el HUD
