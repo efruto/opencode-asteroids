@@ -12,6 +12,7 @@ Juego completo en `index.html` + `game.js` (~420 líneas, todo el juego) + `favi
 ## Arquitectura de `game.js`
 
 - **Estado global mutable**, sin gestor: `ship`, `bullets`, `asteroids`, `particles`, `score`, `lives`, `level`, `state`, `deadTimer` (`game.js:239`). `initGame()` inicializa y `loop()` (rAF, `dt` en segundos, clamp a 0.05) hace `update(dt)` → `draw()`.
+- **Escudo**: no es entidad, es estado de la nave (`ship.shieldCooldown`, `0` = activa). `Ship.reset()` lo deja activo de nuevo, así que reaparecer con burbuja es intencional. Se dibuja con `drawAura()`, el mismo helper que el aura del power-up de velocidad; solo cambian radio (26 vs 18) y color, y quedan concéntricos.
 - **Máquina de estados**: `'playing' | 'dead' | 'gameover'`. En `gameover`, `Space` → `initGame()`. En `dead` corre `deadTimer = 2` y después `ship.reset()`. Los dos estados hacen `return` temprano en `update()`: si agregás lógica de juego, va después de esas salidas.
 - **Convención de entidades** (obligatoria para cualquier entidad nueva): constructor con posición → `update(dt)` → `draw()` → flag `this.dead`. Nada se borra durante el update; cada frame hace `arr = arr.filter(e => !e.dead)` al final de la sección correspondiente.
 - **Variantes de entidad por subclass**: `PowerUp` y `ShootingStar` son clases propias; `ShootingStar extends Asteroid` (tamaño 1, `this.shooting = true`) y vive **dentro de `asteroids`**, así que las colisiones y el fin de nivel la tratan como un asteroide más. El polígono de `Asteroid` está en `drawBody(color)` para que las subclases reutilicen el path.
@@ -29,6 +30,7 @@ Juego completo en `index.html` + `game.js` (~420 líneas, todo el juego) + `favi
 - El polígono del asteroide usa `this.radius * rand(0.6, 1.0)`, o sea que los hijos ya salen más chicos por el tamaño, además de por `size - 1`.
 - `W`/`H` están duplicados: constantes en `game.js:5` y atributos `width`/`height` del canvas (`index.html:23`). Cambiar el tamaño implica tocar ambos.
 - La distancia segura de spawn (`130`) se mide contra el centro del canvas, que es donde reaparece la nave (`Ship.reset()`), así que no la muevas sin revisar ambas cosas.
+- **El filtro de `asteroids` va antes de la colisión nave/asteroide**: el de la sección "Bala vs asteroide" ya corrió para cuando llegás a la colisión con la nave. Si ahí marcás un asteroide como `dead` (lo hace el escudo al bloquear un impacto) hay que volver a filtrar, o el frame que viene colisiona otra vez con el escudo ya caído y te mata.
 
 ## Input
 

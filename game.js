@@ -230,6 +230,14 @@ class PowerUp {
   }
 }
 
+// ── Escudo ─────────────────────────────────────────────────────────────────────
+// Burbuja de un solo golpe alrededor de la nave. Al recibir un impacto se rompe,
+// el asteroide se hace añicos sin sumar puntos y la nave queda desprotegida
+// hasta que el contador llega a 0.
+const SHIELD_RADIUS   = 26;   // radio de la burbuja; el aura de velocidad usa 18
+const SHIELD_RECHARGE = 8;    // segundos hasta levantarse de nuevo
+const SHIELD_COLOR    = '#5ff';
+
 // ── Ship ──────────────────────────────────────────────────────────────────────
 class Ship {
   constructor() { this.reset(); }
@@ -245,6 +253,7 @@ class Ship {
     this.invincible    = 3;
     this.shootCooldown = 0;
     this.speedTimer    = 0;
+    this.shieldCooldown = 0;   // 0 = escudo activo
     this.dead          = false;
   }
 
@@ -257,6 +266,7 @@ class Ship {
     if (this.invincible    > 0) this.invincible    -= dt;
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
     if (this.speedTimer    > 0) this.speedTimer    -= dt;
+    if (this.shieldCooldown > 0) this.shieldCooldown -= dt;
 
     const ROT   = 3.5;   // rad/s
     const THRUST = 260;  // px/s²
@@ -299,15 +309,10 @@ class Ship {
     ctx.rotate(this.angle);
 
     // Aura pulsante mientras dura el bonus
-    if (boosted) {
-      ctx.globalAlpha = 0.45;
-      ctx.strokeStyle = BOOST_COLOR;
-      ctx.lineWidth   = 1.5;
-      ctx.beginPath();
-      ctx.arc(0, 0, 18 + Math.sin(this.speedTimer * 12) * 3, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
+    if (boosted) drawAura(18, this.speedTimer * 12, BOOST_COLOR);
+
+    // Aura pulsante del escudo, mismo estilo que la del bonus de velocidad
+    if (this.shieldCooldown <= 0) drawAura(SHIELD_RADIUS, performance.now() / 180, SHIELD_COLOR);
 
     ctx.strokeStyle = boosted ? BOOST_COLOR : '#fff';
     ctx.lineWidth   = 1.5;
@@ -498,10 +503,22 @@ function update(dt) {
   if (ship.invincible <= 0) {
     for (const a of asteroids) {
       if (dist(ship, a) < ship.radius + a.radius * 0.82) {
-        killShip();
+        if (ship.shieldCooldown <= 0) {
+          // El escudo absorbe el impacto: el asteroide explota sin puntos
+          // ni fragmentos, y la nave queda desprotegida mientras se recarga.
+          a.dead = true;
+          explode(a.x, a.y, a.size * 5);
+          ship.shieldCooldown = SHIELD_RECHARGE;
+        } else {
+          killShip();
+        }
         break;
       }
     }
+    // Necesario porque el filtro de arriba corre antes de esta colisión: sin
+    // esto el asteroide bloqueado vuelve a chocar el próximo frame, ya con el
+    // escudo caído, y mata a la nave que acaba de salvar.
+    asteroids = asteroids.filter(a => !a.dead);
   }
 
   // Nivel completado
@@ -509,6 +526,19 @@ function update(dt) {
 }
 
 // ── Draw ──────────────────────────────────────────────────────────────────────
+// Aura circular translúcida que late alrededor del origen del transform actual.
+// Compartida por el escudo y el power-up de velocidad para que se vean igual:
+// el radio y el color los differentiate, el resto del dibujo es el mismo.
+function drawAura(radius, phase, color) {
+  ctx.globalAlpha = 0.45;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = 1.5;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius + Math.sin(phase) * 3, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
 function drawLifeIcon(x, y) {
   ctx.save();
   ctx.translate(x, y);
@@ -526,6 +556,20 @@ function drawLifeIcon(x, y) {
   ctx.restore();
 }
 
+// Etiqueta con segundos restantes + barra de progreso, centrada arriba
+function drawMeter(label, value, total, color, y) {
+  ctx.textAlign = 'center';
+  ctx.fillStyle = color;
+  ctx.font      = 'bold 15px monospace';
+  ctx.fillText(`${label}  ${value.toFixed(1)}s`, W / 2, y);
+
+  const bw = 90, bh = 4, bx = W / 2 - bw / 2, by = y + 8;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = 1;
+  ctx.strokeRect(bx, by, bw, bh);
+  ctx.fillRect(bx + 1, by + 1, (bw - 2) * (value / total), bh - 2);
+}
+
 function drawHUD() {
   ctx.fillStyle = '#fff';
   ctx.font = '15px monospace';
@@ -540,17 +584,12 @@ function drawHUD() {
     drawLifeIcon(W - 16 - i * 22, 18);
 
   // Contador del power-up de velocidad
-  if (state === 'playing' && ship.speedTimer > 0) {
-    ctx.fillStyle = BOOST_COLOR;
-    ctx.font = 'bold 15px monospace';
-    ctx.fillText(`VELOCIDAD x2  ${ship.speedTimer.toFixed(1)}s`, W / 2, 46);
+  if (state === 'playing' && ship.speedTimer > 0)
+    drawMeter('VELOCIDAD x2', ship.speedTimer, POWERUP_TIME, BOOST_COLOR, 46);
 
-    const bw = 90, bh = 4, bx = W / 2 - bw / 2, by = 54;
-    ctx.strokeStyle = BOOST_COLOR;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(bx, by, bw, bh);
-    ctx.fillRect(bx + 1, by + 1, (bw - 2) * (ship.speedTimer / POWERUP_TIME), bh - 2);
-  }
+  // Recarga del escudo: solo se muestra cuando está caído
+  if (state === 'playing' && ship.shieldCooldown > 0)
+    drawMeter('ESCUDO', ship.shieldCooldown, SHIELD_RECHARGE, SHIELD_COLOR, 70);
 }
 
 function drawOverlay(title, sub) {
