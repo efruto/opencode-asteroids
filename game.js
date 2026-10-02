@@ -68,6 +68,7 @@ class Asteroid {
     this.y    = y;
     this.size = size;
     this.radius = RADII[size];
+    this.points = POINTS[size];
     this.dead = false;
 
     const angle = rand(0, Math.PI * 2);
@@ -101,11 +102,8 @@ class Asteroid {
     ];
   }
 
-  draw() {
-    ctx.save();
-    ctx.translate(this.x, this.y);
-    ctx.rotate(this.rot);
-    ctx.strokeStyle = '#fff';
+  drawBody(color) {
+    ctx.strokeStyle = color;
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
     ctx.beginPath();
@@ -114,6 +112,70 @@ class Asteroid {
       ctx.lineTo(this.verts[i][0], this.verts[i][1]);
     ctx.closePath();
     ctx.stroke();
+  }
+
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rot);
+    this.drawBody('#fff');
+    ctx.restore();
+  }
+}
+
+// ── Estrella fugaz ─────────────────────────────────────────────────────────────
+const SHOOTING_SPEED  = 240;      // px/s (el asteroide normal más rápido va a 85)
+const SHOOTING_TTL    = 10;       // segundos en pantalla antes de desaparecer sola
+const SHOOTING_POINTS = 250;
+const SHOOTING_DROP   = 0.07;     // prob. de soltarla por asteroide destruido
+const SHOOTING_COLOR  = '#ffd75c';
+
+// Asteroide de tamaño 1 que vuela rápido y se desvanece solo. No se divide
+// (size 1 → Asteroid.split() devuelve []) pero sí mata a la nave.
+class ShootingStar extends Asteroid {
+  constructor(x, y) {
+    super(x, y, 1);
+    this.shooting = true;
+    this.points = SHOOTING_POINTS;
+    this.ttl = SHOOTING_TTL;
+
+    const angle = rand(0, Math.PI * 2);
+    const speed = SHOOTING_SPEED + rand(-20, 20);
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed;
+    this.rotSpeed *= 2.5;
+  }
+
+  update(dt) {
+    super.update(dt);
+    this.ttl -= dt;
+    if (this.ttl <= 0) this.dead = true;
+  }
+
+  draw() {
+    // Parpadeo antes de expirar
+    if (this.ttl < 3 && Math.floor(this.ttl * 8) % 2 === 0) return;
+
+    const angle = Math.atan2(this.vy, this.vx);
+    const alpha = Math.min(1, this.ttl / 2);   // desvanecido al final
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.globalAlpha = alpha;
+
+    // Estela en la dirección contraria al movimiento
+    ctx.rotate(angle);
+    const tail = 26 + Math.sin(this.ttl * 10) * 4;
+    ctx.strokeStyle = SHOOTING_COLOR;
+    ctx.lineWidth   = 2;
+    ctx.lineCap     = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-this.radius * 0.6, 0);
+    ctx.lineTo(-tail, 0);
+    ctx.stroke();
+
+    ctx.rotate(this.rot - angle);
+    this.drawBody(SHOOTING_COLOR);
     ctx.restore();
   }
 }
@@ -401,14 +463,20 @@ function update(dt) {
 
   // Bala vs asteroide
   const newAsteroids = [];
+  let spawnedStar = false;
   for (const b of bullets) {
     for (const a of asteroids) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
         b.dead = true;
         a.dead = true;
-        score += POINTS[a.size];
+        score += a.points;
         explode(a.x, a.y, a.size * 5);
         if (Math.random() < POWERUP_DROP) powerups.push(new PowerUp(a.x, a.y));
+        // El flag cubre también las estrellas ya encoladas en este frame
+        if (!spawnedStar && !asteroids.some(s => s.shooting) && Math.random() < SHOOTING_DROP) {
+          spawnedStar = true;
+          newAsteroids.push(new ShootingStar(a.x, a.y));
+        }
         newAsteroids.push(...a.split());
       }
     }

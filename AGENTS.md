@@ -14,6 +14,8 @@ Juego completo en `index.html` + `game.js` (~420 líneas, todo el juego) + `favi
 - **Estado global mutable**, sin gestor: `ship`, `bullets`, `asteroids`, `particles`, `score`, `lives`, `level`, `state`, `deadTimer` (`game.js:239`). `initGame()` inicializa y `loop()` (rAF, `dt` en segundos, clamp a 0.05) hace `update(dt)` → `draw()`.
 - **Máquina de estados**: `'playing' | 'dead' | 'gameover'`. En `gameover`, `Space` → `initGame()`. En `dead` corre `deadTimer = 2` y después `ship.reset()`. Los dos estados hacen `return` temprano en `update()`: si agregás lógica de juego, va después de esas salidas.
 - **Convención de entidades** (obligatoria para cualquier entidad nueva): constructor con posición → `update(dt)` → `draw()` → flag `this.dead`. Nada se borra durante el update; cada frame hace `arr = arr.filter(e => !e.dead)` al final de la sección correspondiente.
+- **Variantes de entidad por subclass**: `PowerUp` y `ShootingStar` son clases propias; `ShootingStar extends Asteroid` (tamaño 1, `this.shooting = true`) y vive **dentro de `asteroids`**, así que las colisiones y el fin de nivel la tratan como un asteroide más. El polígono de `Asteroid` está en `drawBody(color)` para que las subclases reutilicen el path.
+- **Puntos por entidad**: `Asteroid` guarda `this.points = POINTS[size]` y la colisión suma `a.points` (`game.js`), no `POINTS[a.size]` — así una subclase puede cambiar su valor (`ShootingStar` = 250).
 - **Colisiones por distancia de centro**, sin hitbox: `dist(a, b) < radio`. Nave vs asteroide escala el radio del asteroide (`a.radius * 0.82`, `game.js:342`).
 - **Espacio toroidal**: `wrap(v, max)` sobre x/y en Bullet, Asteroid y Ship. `Particle` **no** usa wrap, a propósito.
 - Colisión bala/asteroide: seAccumulan los fragmentos en `newAsteroids` y se concatenan **después** del filtro, para no mutar el array mientras se itera (`game.js:324`). No iteres `asteroids` ni agregues entities durante un `for` sobre esos arrays.
@@ -33,9 +35,9 @@ Juego completo en `index.html` + `game.js` (~420 líneas, todo el juego) + `favi
 - `keys` está indexado por **`e.code`**, no `e.key`: `'ArrowLeft'`, `'ArrowRight'`, `'ArrowUp'`, `'Space'`.
 - `preventDefault` solo se aplica a Space y flechas; el resto de teclas pasa al navegador.
 
-## README desactualizado
+## README al día
 
-`README.md` promete **power-ups** y la **estrella fugaz**: no existen en `game.js` (único intento de implementarlos, desactualizado, es el propio README). No asumas que están ni los busques. El resto de README (controles, puntos, 3 vidas con invencibilidad) sí coincide con el código.
+`README.md` coincide con el código: power-up de velocidad (12% por asteroide destruido) y estrella fugaz (`ShootingStar`, 7% por asteroide destruido). Ojo: la estrella cuenta como asteroide para el fin de nivel (`asteroids.length === 0`), así que si queda viva el nivel no avanza hasta que expire su TTL.
 
 ## Idioma
 
