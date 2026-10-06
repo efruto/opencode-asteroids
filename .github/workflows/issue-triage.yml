@@ -1,0 +1,80 @@
+name: issue-triage
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Label and add review info
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
+        run: |
+          ISSUE_JSON="$(gh issue view "$NUMBER" --repo "$REPO" --json title,body,author,createdAt,url)"
+          TITLE="$(jq -r '.title' <<< "$ISSUE_JSON")"
+          BODY="$(jq -r '.body // ""' <<< "$ISSUE_JSON")"
+          AUTHOR="$(jq -r '.author.login // "unknown"' <<< "$ISSUE_JSON")"
+          DATE="$(jq -r '.createdAt' <<< "$ISSUE_JSON")"
+          URL="$(jq -r '.url' <<< "$ISSUE_JSON")"
+
+          TEXT="$TITLE"$'\n'"$BODY"
+          LABELS=()
+          if grep -Eiq 'error|bug|falla|fallo|roto|crash|no funciona|explota|truena' <<< "$TEXT"; then LABELS+=(bug); fi
+          if grep -Eiq 'mejora|mejorar|agregar|añadir|nueva|nuevo|feature|sugerencia|idea' <<< "$TEXT"; then LABELS+=(enhancement); fi
+          if grep -Eiq 'pregunta|duda|cómo|question|ayuda|help' <<< "$TEXT"; then LABELS+=(question); fi
+          if grep -Eiq 'doc|documentación|readme' <<< "$TEXT"; then LABELS+=(documentation); fi
+          if [ "${#LABELS[@]}" -eq 0 ]; then
+            gh label create needs-triage --repo "$REPO" --color fbca04 --description "Sin clasificar; requiere revisión manual" 2>/dev/null || true
+            LABELS+=(needs-triage)
+          fi
+
+          JOINED="$(IFS=,; echo "${LABELS[*]}")"
+          gh issue edit "$NUMBER" --repo "$REPO" --add-label "$JOINED"
+
+          SHA="$(gh api "repos/$REPO/commits?per_page=1" --jq '.[0].sha' 2>/dev/null || true)"
+
+          BODY_FILE="$(mktemp)"
+          if [ -n "$BODY" ]; then
+            printf '%s\n\n' "$BODY" >> "$BODY_FILE"
+          fi
+          cat >> "$BODY_FILE" <<'EOF'
+          ---
+
+          ## Info para revisión
+
+          ### Contexto del repo
+
+          - Cómo correr: abrir `index.html` en el navegador, o `npx serve .` → http://localhost:3000
+          EOF
+          printf -- "- [README.md](https://github.com/%s/blob/main/README.md) · [AGENTS.md](https://github.com/%s/blob/main/AGENTS.md)\n" "$REPO" "$REPO" >> "$BODY_FILE"
+          cat >> "$BODY_FILE" <<'EOF'
+          - Código del juego: `game.js`
+
+          ### Metadatos
+
+          EOF
+          printf -- "- Autor: @%s — %s\n" "$AUTHOR" "$DATE" >> "$BODY_FILE"
+          if [ -n "$SHA" ]; then
+            printf -- "- Commit de main al crearse: [%s](https://github.com/%s/commit/%s)\n" "${SHA:0:7}" "$REPO" "$SHA" >> "$BODY_FILE"
+          fi
+          printf -- "- Issue: #%s — %s\n" "$NUMBER" "$URL" >> "$BODY_FILE"
+          cat >> "$BODY_FILE" <<'EOF'
+
+          ### Checklist de revisión (completar al revisar)
+
+          - [ ] Navegador y versión:
+          - [ ] SO:
+          - [ ] Pasos para reproducir:
+          - [ ] Salida de consola (si aplica):
+          EOF
+
+          gh issue edit "$NUMBER" --repo "$REPO" --body-file "$BODY_FILE"
+
+          echo "Issue #$NUMBER: labels [$JOINED], cuerpo actualizado"
