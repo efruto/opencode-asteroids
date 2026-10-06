@@ -4,7 +4,7 @@ Clon del clásico arcade **Asteroids** implementado en canvas HTML5 puro, sin de
 
 ## Descripción
 
-Nave espacial en un campo de asteroides con envolvimiento de bordes (el espacio es toroidal). Destruye asteroides para sumar puntos: los grandes se parten en medianos, los medianos en pequeños. Incluye power-ups especiales y tipos de asteroides únicos como la estrella fugaz.
+Nave espacial en un campo de asteroides con envolvimiento de bordes (el espacio es toroidal). Destruye asteroides para sumar puntos: los grandes se parten en medianos, los medianos en pequeños. Incluye power-ups especiales (velocidad x2 y triple shot) y tipos de asteroides únicos como la estrella fugaz.
 
 ## Tecnologías
 
@@ -41,7 +41,16 @@ Luego visita `http://localhost:3000`.
 
 ## Power-ups
 
-Cada asteroide destruido tiene un 12% de probabilidad de soltar un ícono de velocidad. Al tocarlo, la nave se mueve el doble de rápido (empuje e inercia) durante 5 segundos; recoger otro renueva el contador. El ícono desaparece solo a los 15 segundos de aparecer.
+Cada asteroide destruido tira un dado que puede soltar un ícono: 12% de velocidad, 12% de triple shot y 76% nada. Los ícones desaparecen solos a los 15 segundos de aparecer (parpadean en los últimos 3).
+
+- **Velocidad x2** — ícono de chevrones azules. Al tocarlo la nave se mueve el doble de rápido (empuje e inercia) durante 5 segundos.
+- **Triple shot** — ícono de tres barras magenta. Al tocarlo la nave dispara 3 balas en línea recta durante 5 segundos.
+
+Recoger el mismo bonus renueva su contador, y los dos pueden estar activos al mismo tiempo (cada uno con su fila y su barra de progreso en el HUD). Si la nave se destruye, los dos se cancelan.
+
+## Triple shot
+
+Durante 5 segundos cada disparo lanza 3 balas con el mismo ángulo, separadas 6 px sobre la normal a la dirección de tiro (-6 px, 0, +6 px), así que viajan paralelas y cubren tres carriles a la vez. La cadencia no cambia: el bonus multiplica el daño por disparo, no la cantidad de disparos por segundo.
 
 ## Escudo
 
@@ -58,4 +67,5 @@ Asteroide amarillo de tamaño pequeño que vuela a 240 px/s (los normales van en
 - Asteroides se parten en fragmentos más pequeños al ser destruidos
 - Partículas de explosión al destruir asteroides
 - Power-up de velocidad x2 con contador en el HUD
+- Power-up de triple shot: 3 balas paralelas por disparo
 - Estrella fugaz: premio veloz y limitado en el tiempo

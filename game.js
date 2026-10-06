@@ -180,22 +180,39 @@ class ShootingStar extends Asteroid {
   }
 }
 
-// ── Power-up (velocidad x2) ───────────────────────────────────────────────────
-const POWERUP_DROP   = 0.12;   // prob. de soltar uno por asteroide destruido
+// ── Power-ups (velocidad x2 y triple shot) ────────────────────────────────────
+const POWERUP_DROP   = 0.12;   // prob. de soltar un power-up por asteroide destruido
 const POWERUP_TIME   = 5;      // segundos de efecto al recogerlo
 const POWERUP_RADIUS = 10;
 const POWERUP_TTL    = 15;     // segundos en pantalla antes de desaparecer solo
 const BOOST_COLOR    = '#5cf';
+const TRIPLE_COLOR   = '#f6f';
+const TRIPLE_SPREAD  = 6;      // px de separación perpendicular entre las 3 balas
+
+// Un solo dado por asteroide: 12% velocidad, 12% triple, 76% nada.
+function rollPowerUp() {
+  const r = Math.random();
+  if (r < POWERUP_DROP) return 'speed';
+  if (r < POWERUP_DROP * 2) return 'triple';
+  return null;
+}
 
 class PowerUp {
-  constructor(x, y) {
+  constructor(x, y, kind) {
     this.x = x;
     this.y = y;
+    this.kind = kind;                              // 'speed' | 'triple'
+    this.color = kind === 'triple' ? TRIPLE_COLOR : BOOST_COLOR;
     this.rot = rand(0, Math.PI * 2);
     this.rotSpeed = rand(-1.5, 1.5);
     this.radius = POWERUP_RADIUS;
     this.ttl  = POWERUP_TTL;
     this.dead = false;
+  }
+
+  activate(ship) {
+    if (this.kind === 'triple') ship.activateTriple();
+    else ship.activateSpeed();
   }
 
   update(dt) {
@@ -211,20 +228,28 @@ class PowerUp {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.rot);
-    ctx.strokeStyle = BOOST_COLOR;
+    ctx.strokeStyle = this.color;
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
     ctx.beginPath();
     ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
     ctx.stroke();
-    // Chevrons hacia adelante
+
     ctx.beginPath();
-    ctx.moveTo(-4, -4);
-    ctx.lineTo( 1,  0);
-    ctx.lineTo(-4,  4);
-    ctx.moveTo( 1, -4);
-    ctx.lineTo( 6,  0);
-    ctx.lineTo( 1,  4);
+    if (this.kind === 'triple') {
+      // Tres barras paralelas: la misma línea recta que dispara la nave
+      ctx.moveTo(-5, -5); ctx.lineTo(6, -5);
+      ctx.moveTo(-5,  0); ctx.lineTo(6,  0);
+      ctx.moveTo(-5,  5); ctx.lineTo(6,  5);
+    } else {
+      // Chevrons hacia adelante
+      ctx.moveTo(-4, -4);
+      ctx.lineTo( 1,  0);
+      ctx.lineTo(-4,  4);
+      ctx.moveTo( 1, -4);
+      ctx.lineTo( 6,  0);
+      ctx.lineTo( 1,  4);
+    }
     ctx.stroke();
     ctx.restore();
   }
@@ -253,6 +278,7 @@ class Ship {
     this.invincible    = 3;
     this.shootCooldown = 0;
     this.speedTimer    = 0;
+    this.tripleTimer   = 0;
     this.shieldCooldown = 0;   // 0 = escudo activo
     this.dead          = false;
   }
@@ -261,11 +287,16 @@ class Ship {
     this.speedTimer = POWERUP_TIME;
   }
 
+  activateTriple() {
+    this.tripleTimer = POWERUP_TIME;
+  }
+
   update(dt) {
     if (this.dead) return;
     if (this.invincible    > 0) this.invincible    -= dt;
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
     if (this.speedTimer    > 0) this.speedTimer    -= dt;
+    if (this.tripleTimer   > 0) this.tripleTimer   -= dt;
     if (this.shieldCooldown > 0) this.shieldCooldown -= dt;
 
     const ROT   = 3.5;   // rad/s
@@ -294,7 +325,13 @@ class Ship {
     const NOSE = 21;
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
-    return [new Bullet(ox, oy, this.angle)];
+    if (this.tripleTimer <= 0) return [new Bullet(ox, oy, this.angle)];
+
+    // Tres balas en línea recta: mismo ángulo, separadas sobre la normal,
+    // así quedan paralelas y no se cruzan al rotar la nave.
+    const nx = -Math.sin(this.angle) * TRIPLE_SPREAD;
+    const ny =  Math.cos(this.angle) * TRIPLE_SPREAD;
+    return [-1, 0, 1].map(k => new Bullet(ox + nx * k, oy + ny * k, this.angle));
   }
 
   draw() {
@@ -303,18 +340,35 @@ class Ship {
     if (this.invincible > 0 && Math.floor(this.invincible * 8) % 2 === 0) return;
 
     const boosted = this.speedTimer > 0;
+    const tripled = this.tripleTimer > 0;
 
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
 
-    // Aura pulsante mientras dura el bonus
-    if (boosted) drawAura(18, this.speedTimer * 12, BOOST_COLOR);
+    // Aura pulsante por cada bonus activo (pueden coexistir), mismo estilo
+    for (const [active, timer, color] of [
+      [boosted, this.speedTimer,  BOOST_COLOR],
+      [tripled, this.tripleTimer, TRIPLE_COLOR],
+    ]) {
+      if (active) drawAura(18, timer * 12, color);
+    }
 
-    // Aura pulsante del escudo, mismo estilo que la del bonus de velocidad
+    // Aura pulsante del escudo, mismo estilo que la de los bonus
     if (this.shieldCooldown <= 0) drawAura(SHIELD_RADIUS, performance.now() / 180, SHIELD_COLOR);
 
-    ctx.strokeStyle = boosted ? BOOST_COLOR : '#fff';
+    // Cañones extra mientras dure el triple shot: un tridente que nace en la
+    // punta y se abre hacia atrás, así las 3 balas salen del mismo punto.
+    if (tripled) {
+      ctx.strokeStyle = TRIPLE_COLOR;
+      ctx.lineWidth   = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(20, 0); ctx.lineTo(6, -7);
+      ctx.moveTo(20, 0); ctx.lineTo(6,  7);
+      ctx.stroke();
+    }
+
+    ctx.strokeStyle = tripled ? TRIPLE_COLOR : boosted ? BOOST_COLOR : '#fff';
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
 
@@ -422,6 +476,7 @@ function killShip() {
   explode(ship.x, ship.y, 14);
   ship.dead = true;
   ship.speedTimer = 0;
+  ship.tripleTimer = 0;
   lives--;
   if (lives <= 0) {
     state = 'gameover';
@@ -476,7 +531,8 @@ function update(dt) {
         a.dead = true;
         score += a.points;
         explode(a.x, a.y, a.size * 5);
-        if (Math.random() < POWERUP_DROP) powerups.push(new PowerUp(a.x, a.y));
+        const kind = rollPowerUp();
+        if (kind) powerups.push(new PowerUp(a.x, a.y, kind));
         // El flag cubre también las estrellas ya encoladas en este frame
         if (!spawnedStar && !asteroids.some(s => s.shooting) && Math.random() < SHOOTING_DROP) {
           spawnedStar = true;
@@ -493,7 +549,7 @@ function update(dt) {
   for (const p of powerups) {
     if (!p.dead && dist(ship, p) < ship.radius + p.radius) {
       p.dead = true;
-      ship.activateSpeed();
+      p.activate(ship);
       explode(p.x, p.y, 6);
     }
   }
@@ -583,13 +639,18 @@ function drawHUD() {
   for (let i = 0; i < lives; i++)
     drawLifeIcon(W - 16 - i * 22, 18);
 
-  // Contador del power-up de velocidad
-  if (state === 'playing' && ship.speedTimer > 0)
-    drawMeter('VELOCIDAD x2', ship.speedTimer, POWERUP_TIME, BOOST_COLOR, 46);
+  if (state !== 'playing') return;
 
-  // Recarga del escudo: solo se muestra cuando está caído
-  if (state === 'playing' && ship.shieldCooldown > 0)
-    drawMeter('ESCUDO', ship.shieldCooldown, SHIELD_RECHARGE, SHIELD_COLOR, 70);
+  // Contadores de power-ups, una fila por bonus activo
+  const bonuses = [];
+  if (ship.speedTimer  > 0) bonuses.push({ label: 'VELOCIDAD x2', timer: ship.speedTimer,  total: POWERUP_TIME,  color: BOOST_COLOR });
+  if (ship.tripleTimer > 0) bonuses.push({ label: 'TRIPLE SHOT',   timer: ship.tripleTimer, total: POWERUP_TIME,  color: TRIPLE_COLOR });
+
+  bonuses.forEach((b, i) => drawMeter(b.label, b.timer, b.total, b.color, 46 + i * 24));
+
+  // Recarga del escudo: solo se muestra cuando está caído, debajo de los bonus
+  if (ship.shieldCooldown > 0)
+    drawMeter('ESCUDO', ship.shieldCooldown, SHIELD_RECHARGE, SHIELD_COLOR, 46 + bonuses.length * 24);
 }
 
 function drawOverlay(title, sub) {
