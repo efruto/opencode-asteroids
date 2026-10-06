@@ -278,6 +278,7 @@ const SKINS = [
   { id: 'manta',   name: 'Manta',       color: '#b05cff', hull: [[ 18, 0], [  0,-12], [-14, -6], [-14, 6], [  0,12]] },
   { id: 'inter',   name: 'Interceptor', color: '#ff5c5c', hull: [[ 17, 0], [ -2,-10], [ -9, 0], [ -2, 10]] },
   { id: 'capsula', name: 'Cápsula',     color: '#fff',    hull: [[ 18, 0], [ 12,  7], [  4,10], [ -8, 9], [-13, 0], [ -8, -9], [  4,-10], [12, -7]] },
+  { id: 'supernova', name: 'Supernova', color: '#b800ff', multiplier: 2, hull: [[ 40, 0], [-24, -18], [-14, 0], [-24, 18]] },
 ];
 
 let skinIndex = 0;          // skin activa: NO se reinicia al morir ni al cambiar de nivel
@@ -620,7 +621,7 @@ function update(dt) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
         b.dead = true;
         a.dead = true;
-        score += a.points;
+        score += a.points * (currentSkin().multiplier || 1);
         explode(a.x, a.y, a.size * 5);
         const kind = rollPowerUp();
         if (kind) powerups.push(new PowerUp(a.x, a.y, kind));
@@ -756,8 +757,8 @@ function drawSkinSelector() {
   // Preview de la nave
   ctx.save();
   ctx.translate(W / 2, 196);
-  drawHull(skin, SKIN_PREVIEW, skin.color);
-  if (ship.thrusting && Math.random() > 0.35) drawFlame(skin, SKIN_PREVIEW, rand(6, 14));
+  drawHull(skin, SKIN_PREVIEW * (skin.multiplier === 2 ? 2 : 1), skin.color);
+  if (ship.thrusting && Math.random() > 0.35) drawFlame(skin, SKIN_PREVIEW * (skin.multiplier === 2 ? 2 : 1), rand(6, 14));
   ctx.restore();
 
   const pw = 420, ph = 210;
