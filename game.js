@@ -263,6 +263,100 @@ const SHIELD_RADIUS   = 26;   // radio de la burbuja; el aura de velocidad usa 1
 const SHIELD_RECHARGE = 8;    // segundos hasta levantarse de nuevo
 const SHIELD_COLOR    = '#5ff';
 
+// ── Pieles de nave ─────────────────────────────────────────────────────────────
+// `hull` son los vértices del casco en px, con +x mirando hacia la nariz. El resto
+// de los datos (morro, ancla de la llama, escala del ícono del HUD) se deriva solo,
+// así que una piel nueva es una línea más en la tabla.
+const SKIN_KEY          = 'asteroids.skin';
+const SKIN_ICON_BOX     = 16;   // px que ocupa la silueta en los íconos de vida
+const SKIN_PREVIEW      = 3;    // escala del casco en el menú de pieles
+
+const SKINS = [
+  { id: 'clasica', name: 'Clásica',     color: '#fff',    hull: [[ 20, 0], [-12, -9], [ -7, 0], [-12,  9]] },
+  { id: 'delta',   name: 'Delta',       color: '#fff',    hull: [[ 26, 0], [-10, -7], [-10,  7]] },
+  { id: 'caza',    name: 'Caza',        color: '#fff',    hull: [[ 16, 0], [ -4,-16], [ -4, -6], [-16, -3], [-16, 3], [ -4, 6], [ -4,16]] },
+  { id: 'manta',   name: 'Manta',       color: '#b05cff', hull: [[ 18, 0], [  0,-12], [-14, -6], [-14, 6], [  0,12]] },
+  { id: 'inter',   name: 'Interceptor', color: '#ff5c5c', hull: [[ 17, 0], [ -2,-10], [ -9, 0], [ -2, 10]] },
+  { id: 'capsula', name: 'Cápsula',     color: '#fff',    hull: [[ 18, 0], [ 12,  7], [  4,10], [ -8, 9], [-13, 0], [ -8, -9], [  4,-10], [12, -7]] },
+];
+
+let skinIndex = 0;          // skin activa: NO se reinicia al morir ni al cambiar de nivel
+let skinReturn;             // estado al que vuelve el menú de pieles
+
+for (const s of SKINS) {
+  const xs = s.hull.map(p => p[0]);
+  const ys = s.hull.map(p => p[1]);
+  s.nose      = Math.max(...xs);
+  s.tail      = Math.min(...xs) + 2;
+  s.iconScale = SKIN_ICON_BOX / Math.max(Math.max(...xs) - Math.min(...xs),
+                                          Math.max(...ys) - Math.min(...ys));
+}
+
+function currentSkin() {
+  return SKINS[skinIndex];
+}
+
+// El escalado lo hace el helper, así que el grosor del trazo se compensa para que
+// una piel grande no salga con un borde desproporcionadamente grueso.
+function drawHull(skin, scale = 1, color = '#fff', width = 1.5) {
+  ctx.save();
+  ctx.scale(scale, scale);
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = width / scale;
+  ctx.lineJoin    = 'round';
+  ctx.beginPath();
+  ctx.moveTo(skin.hull[0][0], skin.hull[0][1]);
+  for (let i = 1; i < skin.hull.length; i++)
+    ctx.lineTo(skin.hull[i][0], skin.hull[i][1]);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawFlame(skin, scale = 1, len = 10) {
+  ctx.save();
+  ctx.scale(scale, scale);
+  ctx.beginPath();
+  ctx.moveTo(skin.tail, -4);
+  ctx.lineTo(skin.tail - len, 0);
+  ctx.lineTo(skin.tail,  4);
+  ctx.strokeStyle = 'rgba(255, 130, 0, 0.85)';
+  ctx.lineWidth   = 1.5 / scale;
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+  ctx.restore();
+}
+
+function loadSkin() {
+  try {
+    const i = SKINS.findIndex(s => s.id === localStorage.getItem(SKIN_KEY));
+    if (i >= 0) skinIndex = i;
+  } catch {}
+}
+
+function saveSkin() {
+  try {
+    localStorage.setItem(SKIN_KEY, currentSkin().id);
+  } catch {}
+}
+
+function openSkinMenu() {
+  skinReturn = state;
+  state = 'skins';
+  // Sin esto, una tecla leída solo en el menú (Esc, Enter) queda en true desde un
+  // frame anterior y cierra el menú apenas se abre.
+  justPressed.ArrowLeft  = false;
+  justPressed.ArrowRight = false;
+  justPressed.Space      = false;
+  justPressed.Enter      = false;
+  justPressed.Escape     = false;
+}
+
+function closeSkinMenu() {
+  state = skinReturn;
+  saveSkin();
+}
+
 // ── Ship ──────────────────────────────────────────────────────────────────────
 class Ship {
   constructor() { this.reset(); }
@@ -322,9 +416,9 @@ class Ship {
   tryShoot() {
     if (this.shootCooldown > 0 || this.dead) return [];
     this.shootCooldown = 0.2;
-    const NOSE = 21;
-    const ox = this.x + Math.cos(this.angle) * NOSE;
-    const oy = this.y + Math.sin(this.angle) * NOSE;
+    const skin = currentSkin();
+    const ox = this.x + Math.cos(this.angle) * skin.nose;
+    const oy = this.y + Math.sin(this.angle) * skin.nose;
     if (this.tripleTimer <= 0) return [new Bullet(ox, oy, this.angle)];
 
     // Tres balas en línea recta: mismo ángulo, separadas sobre la normal,
@@ -341,6 +435,7 @@ class Ship {
 
     const boosted = this.speedTimer > 0;
     const tripled = this.tripleTimer > 0;
+    const skin = currentSkin();
 
     ctx.save();
     ctx.translate(this.x, this.y);
@@ -363,34 +458,17 @@ class Ship {
       ctx.strokeStyle = TRIPLE_COLOR;
       ctx.lineWidth   = 1.5;
       ctx.beginPath();
-      ctx.moveTo(20, 0); ctx.lineTo(6, -7);
-      ctx.moveTo(20, 0); ctx.lineTo(6,  7);
+      ctx.moveTo(skin.nose, 0); ctx.lineTo(6, -7);
+      ctx.moveTo(skin.nose, 0); ctx.lineTo(6,  7);
       ctx.stroke();
     }
 
-    ctx.strokeStyle = tripled ? TRIPLE_COLOR : boosted ? BOOST_COLOR : '#fff';
-    ctx.lineWidth   = 1.5;
-    ctx.lineJoin    = 'round';
-
-    // Silueta clásica: triángulo con muesca trasera
-    ctx.beginPath();
-    ctx.moveTo( 20,  0);   // nariz
-    ctx.lineTo(-12, -9);   // ala izquierda
-    ctx.lineTo( -7,  0);   // muesca trasera
-    ctx.lineTo(-12,  9);   // ala derecha
-    ctx.closePath();
-    ctx.stroke();
+    // Silueta de la piel activa (triple y boost pisan el color, como antes)
+    drawHull(skin, 1, tripled ? TRIPLE_COLOR : boosted ? BOOST_COLOR : skin.color);
 
     // Llama del propulsor
-    if (this.thrusting && Math.random() > 0.35) {
-      const len = rand(6, 14) * (boosted ? 2 : 1);
-      ctx.beginPath();
-      ctx.moveTo(-8, -4);
-      ctx.lineTo(-8 - len, 0);
-      ctx.lineTo(-8,  4);
-      ctx.strokeStyle = 'rgba(255, 130, 0, 0.85)';
-      ctx.stroke();
-    }
+    if (this.thrusting && Math.random() > 0.35)
+      drawFlame(skin, 1, rand(6, 14) * (boosted ? 2 : 1));
 
     ctx.restore();
   }
@@ -431,7 +509,7 @@ class Particle {
 // ── Estado del juego ──────────────────────────────────────────────────────────
 let ship, bullets, asteroids, particles, powerups;
 let score, lives, level;
-let state;      // 'playing' | 'dead' | 'gameover'
+let state;      // 'playing' | 'dead' | 'gameover' | 'skins'
 let deadTimer;
 
 function spawnAsteroids(count) {
@@ -488,8 +566,20 @@ function killShip() {
 
 // ── Update ────────────────────────────────────────────────────────────────────
 function update(dt) {
+  if (state === 'skins') {
+    if (pressed('ArrowLeft'))  skinIndex = wrap(skinIndex - 1, SKINS.length);
+    if (pressed('ArrowRight')) skinIndex = wrap(skinIndex + 1, SKINS.length);
+    if (pressed('Space') || pressed('Enter') || pressed('Escape')) closeSkinMenu();
+    return;
+  }
+
   if (state === 'gameover') {
-    if (pressed('Space')) initGame();
+    // Ambas teclas se leen siempre: si no, un S junto a un Espacio queda guardado
+    // en justPressed y abre el menú en el frame siguiente.
+    const wantRestart = pressed('Space');
+    const wantSkins   = pressed('KeyS');
+    if (wantSkins) openSkinMenu();
+    else if (wantRestart) initGame();
     particles.forEach(p => p.update(dt));
     particles = particles.filter(p => !p.dead);
     return;
@@ -510,6 +600,7 @@ function update(dt) {
   if (pressed('Space')) {
     bullets.push(...ship.tryShoot());
   }
+  if (pressed('KeyS')) openSkinMenu();
 
   ship.update(dt);
   bullets.forEach(b => b.update(dt));
@@ -584,7 +675,7 @@ function update(dt) {
 // ── Draw ──────────────────────────────────────────────────────────────────────
 // Aura circular translúcida que late alrededor del origen del transform actual.
 // Compartida por el escudo y el power-up de velocidad para que se vean igual:
-// el radio y el color los differentiate, el resto del dibujo es el mismo.
+// el radio y el color los diferencia, el resto del dibujo es el mismo.
 function drawAura(radius, phase, color) {
   ctx.globalAlpha = 0.45;
   ctx.strokeStyle = color;
@@ -596,19 +687,11 @@ function drawAura(radius, phase, color) {
 }
 
 function drawLifeIcon(x, y) {
+  const skin = currentSkin();
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(-Math.PI / 2);
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth   = 1.2;
-  ctx.lineJoin    = 'round';
-  ctx.beginPath();
-  ctx.moveTo( 9,  0);
-  ctx.lineTo(-6, -5);
-  ctx.lineTo(-3,  0);
-  ctx.lineTo(-6,  5);
-  ctx.closePath();
-  ctx.stroke();
+  drawHull(skin, skin.iconScale, skin.color, 1.2);
   ctx.restore();
 }
 
@@ -639,18 +722,69 @@ function drawHUD() {
   for (let i = 0; i < lives; i++)
     drawLifeIcon(W - 16 - i * 22, 18);
 
-  if (state !== 'playing') return;
+  if (state === 'playing') {
+    // Contadores de power-ups, una fila por bonus activo
+    const bonuses = [];
+    if (ship.speedTimer  > 0) bonuses.push({ label: 'VELOCIDAD x2', timer: ship.speedTimer,  total: POWERUP_TIME,  color: BOOST_COLOR });
+    if (ship.tripleTimer > 0) bonuses.push({ label: 'TRIPLE SHOT',   timer: ship.tripleTimer, total: POWERUP_TIME,  color: TRIPLE_COLOR });
 
-  // Contadores de power-ups, una fila por bonus activo
-  const bonuses = [];
-  if (ship.speedTimer  > 0) bonuses.push({ label: 'VELOCIDAD x2', timer: ship.speedTimer,  total: POWERUP_TIME,  color: BOOST_COLOR });
-  if (ship.tripleTimer > 0) bonuses.push({ label: 'TRIPLE SHOT',   timer: ship.tripleTimer, total: POWERUP_TIME,  color: TRIPLE_COLOR });
+    bonuses.forEach((b, i) => drawMeter(b.label, b.timer, b.total, b.color, 46 + i * 24));
 
-  bonuses.forEach((b, i) => drawMeter(b.label, b.timer, b.total, b.color, 46 + i * 24));
+    // Recarga del escudo: solo se muestra cuando está caído, debajo de los bonus
+    if (ship.shieldCooldown > 0)
+      drawMeter('ESCUDO', ship.shieldCooldown, SHIELD_RECHARGE, SHIELD_COLOR, 46 + bonuses.length * 24);
+  }
 
-  // Recarga del escudo: solo se muestra cuando está caído, debajo de los bonus
-  if (ship.shieldCooldown > 0)
-    drawMeter('ESCUDO', ship.shieldCooldown, SHIELD_RECHARGE, SHIELD_COLOR, 46 + bonuses.length * 24);
+  // Piel activa
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.font = '13px monospace';
+  ctx.fillText(`PIEL  ${currentSkin().name}`, 14, H - 14);
+}
+
+function drawSkinSelector() {
+  const skin = currentSkin();
+
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 40px monospace';
+  ctx.fillText('PIEL DE NAVE', W / 2, 76);
+
+  // Preview de la nave
+  ctx.save();
+  ctx.translate(W / 2, 196);
+  drawHull(skin, SKIN_PREVIEW, skin.color);
+  if (ship.thrusting && Math.random() > 0.35) drawFlame(skin, SKIN_PREVIEW, rand(6, 14));
+  ctx.restore();
+
+  const pw = 420, ph = 210;
+  const px = W / 2 - pw / 2, py = 300;
+  ctx.fillStyle = 'rgba(255,255,255,0.05)';
+  ctx.fillRect(px, py, pw, ph);
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(px, py, pw, ph);
+
+  const rowH = 30;
+  SKINS.forEach((s, i) => {
+    const selected = i === skinIndex;
+    const y = py + 32 + i * rowH;
+    ctx.textAlign = 'left';
+    ctx.font = selected ? 'bold 17px monospace' : '17px monospace';
+    ctx.fillStyle = selected ? s.color : 'rgba(255,255,255,0.45)';
+    ctx.fillText(selected ? `> ${s.name}` : `  ${s.name}`, px + 30, y);
+
+    ctx.fillStyle = s.color;
+    ctx.fillRect(px + pw - 46, y - 11, 12, 12);
+  });
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,255,255,0.65)';
+  ctx.font = '15px monospace';
+  ctx.fillText('←/→  ELEGIR     ESPACIO  CONFIRMAR     ESC  SALIR', W / 2, 566);
 }
 
 function drawOverlay(title, sub) {
@@ -676,7 +810,9 @@ function draw() {
   drawHUD();
 
   if (state === 'gameover')
-    drawOverlay('GAME OVER', `PUNTAJE: ${score}   —   ESPACIO PARA REINICIAR`);
+    drawOverlay('GAME OVER', `PUNTAJE: ${score}   —   S: PIELES · ESPACIO PARA REINICIAR`);
+  else if (state === 'skins')
+    drawSkinSelector();
 }
 
 // ── Loop principal ────────────────────────────────────────────────────────────
@@ -690,5 +826,6 @@ function loop(ts) {
   requestAnimationFrame(loop);
 }
 
+loadSkin();
 initGame();
 requestAnimationFrame(loop);
